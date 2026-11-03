@@ -271,7 +271,7 @@
   load(hl ? +hl[1] - 1 : (save.last || 0));
   requestAnimationFrame(frame);
   setInterval(() => { if (performance.now() - lastFrame > 250) frame(performance.now(), true); }, 120); // keeps rendering where rAF is throttled
-  if (!hl && location.hash !== '#selftest' && !Object.keys(save.best).length) show(`<h2>Lantern Drift</h2>
+  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length) show(`<h2>Lantern Drift</h2>
     <p>On the night of the river festival, the lanterns have drifted loose.</p>
     <p>Each lantern drifts in a straight line until a stone or another lantern stops it. Lanterns of the same colour always drift together. Bring every lantern home to the ring of its colour.</p>
     <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
@@ -287,6 +287,16 @@
           if (li < LEVELS.length) run(); else { const ok = res.filter(Boolean).length; document.title = 'SELFTEST ' + ok + '/' + res.length; document.body.setAttribute('data-selftest', ok + '/' + res.length); } }, 60); };
       tick(); };
     run();
+  }
+  // ---------- demo (#demo): auto-plays a few nights at human pace, used to record the gameplay video ----------
+  if (location.hash === '#demo') {
+    const plan = [0, 4, 9, 18, 23]; let pi = 0;
+    const play = () => { hide(); load(plan[pi]); const sol = LEVELS[plan[pi]].sol.split(' '); let k = 0;
+      const tick = () => { if (anim) return setTimeout(tick, 40);
+        if (k < sol.length) { const c = +sol[k][0]; if (c !== sel) { select(c); setTimeout(tick, 380); return; } move(sol[k][1]); k++; return setTimeout(tick, 520); }
+        setTimeout(() => { pi++; if (pi < plan.length) play(); else document.title = 'DEMO DONE'; }, 2600); };
+      setTimeout(tick, 900); };
+    play();
   }
 })();
 </script>
