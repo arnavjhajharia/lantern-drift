@@ -7,7 +7,7 @@ Submit at https://submit.chromaawards.com/ (deadline Jan 7 2027, 11:45pm PT; no 
 | Division / Category | Game → **Puzzle & Strategy** |
 | Title | Lantern Drift |
 | Public project link (playable, web, no download) | https://arnavjhajharia.github.io/lantern-drift/ |
-| Download link (gameplay video) | https://arnavjhajharia.github.io/lantern-drift/gameplay.mp4 (50 s, 1280x720, H.264 + AAC, game audio) |
+| Download link (gameplay video) | https://arnavjhajharia.github.io/lantern-drift/gameplay.mp4 (54 s, 1280x720, H.264 + AAC, game audio) |
 | Thumbnail | https://arnavjhajharia.github.io/lantern-drift/thumb.png |
 | Language | English |
 
@@ -23,4 +23,5 @@ stars always means a perfect solution. It plays in any browser with keyboard, sw
 
 **AI tools / disclosure (paste in the tools/notes field):**
 - Claude (Anthropic): co-wrote the game code, the level generator and the BFS solver that verifies every level.
-- No generated art or audio assets. Visuals are canvas code and sound is WebAudio synthesis. No third-party IP.
+- Higgsfield (GPT Image 2.5 model): the one painted title/ending illustration (title.jpg), from an original prompt.
+- Everything else is code: the board is drawn on canvas and all sound is WebAudio synthesis. No third-party IP.

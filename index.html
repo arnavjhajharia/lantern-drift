@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Lantern Drift — a sliding-light puzzle</title>
+<meta property="og:image" content="https://arnavjhajharia.github.io/lantern-drift/title.jpg">
 <meta name="description" content="Lantern Drift: guide drifting lanterns of the same colour home together. 28 hand-checked puzzles, every one solver-verified with an optimal par.">
 <style>
   :root { --bg:#070b16; --ink:#e9e4d4; --dim:#8a8fa3; --a:#ffb347; --b:#4fd1a5; --c:#b48cff; }
@@ -30,6 +31,10 @@
   #hint { color:var(--dim); font-size:13px; text-align:center; margin-top:6px; min-height:1.3em; }
   #overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:#04070fcc; backdrop-filter: blur(3px); z-index:5; }
   #overlay.on { display:flex; }
+  #overlay.art { background:linear-gradient(180deg,#04070f55 0%,#04070f22 40%,#04070fcc 100%), url(title.jpg) center/cover no-repeat; backdrop-filter:none; }
+  #overlay.art .card { background:#0a1224cc; backdrop-filter: blur(4px); }
+  #overlay.art h2 { font-size:clamp(26px,5vw,40px); letter-spacing:.24em; text-transform:uppercase; }
+  #overlay.art h2 b { color:var(--a); font-weight:400; }
   .card { background:#0d1528; border:1px solid #ffffff1f; border-radius:18px; padding:22px 24px; width:min(560px,92vw); max-height:88vh; overflow:auto; text-align:center; }
   .card h2 { font-weight:400; letter-spacing:.12em; margin:0 0 8px; }
   .card p { color:#c9c4b4; line-height:1.5; margin:8px 0; }
@@ -189,12 +194,12 @@
       <div class="stars">${'★'.repeat(st)}<span class="off">${'★'.repeat(3 - st)}</span></div>
       <p>${moves} moves · par ${L.par}${moves > L.par ? ' — it can be done in ' + L.par + '.' : moves === L.par ? ' — perfect.' : ''}</p>
       <p>${last ? `Thank you for playing. ${totalStars()} / ${LEVELS.length * 3} stars.` : ''}</p>
-      <button id="again">Replay</button> ${last ? '<button id="lvls">All nights</button>' : '<button id="next">Next night →</button>'}`), 650);
+      <button id="again">Replay</button> ${last ? '<button id="lvls">All nights</button>' : '<button id="next">Next night →</button>'}`, last), 650);
   }
   function totalStars() { return Object.entries(save.best).reduce((s, [i, m]) => s + starsFor(m, LEVELS[i].par), 0); }
   function unlocked(i) { return i === 0 || save.best[i - 1] != null || save.best[i] != null; }
-  function show(html) {
-    $('card').innerHTML = html; $('overlay').classList.add('on');
+  function show(html, art) {
+    $('card').innerHTML = html; $('overlay').classList.add('on'); $('overlay').classList.toggle('art', !!art);
     const bind = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     bind('again', () => { hide(); load(idx); });
     bind('next', () => { hide(); load(idx + 1); });
@@ -353,12 +358,13 @@
   load(hl ? +hl[1] - 1 : (save.last || 0));
   requestAnimationFrame(frame);
   setInterval(() => { if (performance.now() - lastFrame > 250) frame(performance.now(), true); }, 120); // keeps rendering where rAF is throttled
-  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length) show(`<h2>Lantern Drift</h2>
+  const intro = () => show(`<h2>Lantern <b>Drift</b></h2>
     <p>On the night of the river festival, the lanterns have drifted loose.</p>
     <p>Each lantern drifts in a straight line until a stone or another lantern stops it. Lanterns of the same colour always drift together. Bring every lantern home to the ring of its colour.</p>
     <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
     <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>H</kbd> hint · <kbd>R</kbd> restart</p>
-    <button id="start">Light the first lantern</button>`);
+    <button id="start">Light the first lantern</button>`, true);
+  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length) intro();
   // ---------- self-test (#selftest): plays every level's optimal solution through the real input path ----------
   if (location.hash === '#selftest') {
     hide(); const res = []; let li = 0;
@@ -388,7 +394,7 @@
         if (k < sol.length) { const c = +sol[k][0]; if (c !== sel) { select(c); setTimeout(tick, 380); return; } move(sol[k][1]); k++; return setTimeout(tick, 520); }
         setTimeout(() => { pi++; if (pi < plan.length) play(); else if (window.__stopRec) window.__stopRec(); else document.title = 'DEMO DONE'; }, 2600); };
       setTimeout(tick, 900); };
-    play();
+    intro(); setTimeout(play, 3200);
   }
 })();
 </script>
