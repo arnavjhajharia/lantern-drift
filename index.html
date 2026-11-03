@@ -47,6 +47,7 @@
   kbd { font-family:ui-monospace,monospace; font-size:12px; border:1px solid #ffffff33; border-radius:4px; padding:1px 5px; }
   a { color:var(--b); }
 </style>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23140c24'/><circle cx='16' cy='16' r='8' fill='%23ffb347'/></svg>">
 </head>
 <body>
 <canvas id="sky" aria-hidden="true"></canvas>
@@ -68,14 +69,17 @@
 </div>
 <div id="overlay"><div class="card" id="card"></div></div>
 
+<script src="portal.js"></script>
 <script src="core.js"></script>
 <script src="levels.js"></script>
+<script src="daily.js"></script>
+<script src="daily-hook.js"></script>
 <script>
 (() => {
   const COL = ['#ffb347', '#4fd1a5', '#b48cff'], NAME = ['amber', 'jade', 'violet'], GLYPH = ['●', '◆', '▲'];
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   const $ = id => document.getElementById(id);
-  const save = JSON.parse(localStorage.getItem('ld-save') || '{}'); // {best:{i:moves}}
+  const save = JSON.parse(localStorage.getItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save') || '{}'); // {best:{i:moves}}
   save.best = save.best || {};
   let L, B, pieces, hist, sel = 0, moves = 0, anim = null, idx = 0, won = false, sound = save.sound !== false;
   let cell = 48, ox = 0, oy = 0, t0 = performance.now(), ripples = [];
@@ -126,6 +130,7 @@
 
   // ---------- level / state ----------
   function load(i) {
+    if (window.Portal) { if (ac) Portal.setAudio(ac); Portal.start(); }
     idx = Math.max(0, Math.min(LEVELS.length - 1, i));
     L = LEVELS[idx]; B = LD.parse(L);
     pieces = B.pieces.map(p => ({ ...p })); hist = []; moves = 0; won = false; anim = null;
@@ -141,7 +146,7 @@
       : idx === 18 ? 'Three colours. Every night has a solution in exactly par moves.' : '';
     save.last = idx; persist(); resize();
   }
-  function persist() { localStorage.setItem('ld-save', JSON.stringify(save)); }
+  function persist() { localStorage.setItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save', JSON.stringify(save)); }
   function select(c) {
     if (!pieces.some(p => p.c === c)) return;
     sel = c;
@@ -161,6 +166,12 @@
   let hintA = null;
   function hint() {
     if (won || anim) return;
+    if (window.Portal && Portal.canReward && (save.hints | 0) >= 3) {
+      $('hint').innerHTML = 'Free hints used up. <button id="rwh" style="font:inherit;cursor:pointer">▶ Watch a short ad for a hint</button>';
+      $('rwh').onclick = (e) => { e.stopPropagation(); $('hint').textContent = 'Loading…'; Portal.rewarded(ok => { if (ok) { $('hint').textContent = 'Reading the current…'; setTimeout(hint2, 30); } else $('hint').textContent = 'No ad available right now. Try again in a moment.'; }); };
+      return;
+    }
+    if (window.Portal && Portal.canReward) { save.hints = (save.hints | 0) + 1; persist(); }
     $('hint').textContent = 'Reading the current…';
     setTimeout(hint2, 30);
   }
@@ -186,15 +197,15 @@
   }
   function starsFor(m, par) { return m <= par ? 3 : m <= Math.ceil(par * 1.5) ? 2 : 1; }
   function win() {
-    won = true;
+    won = true; if (window.Portal) Portal.stop();
     const prev = save.best[idx]; if (!prev || moves < prev) save.best[idx] = moves; persist();
     [0, 4, 7, 12].forEach((s, k) => setTimeout(() => chime(s + 7, 1.6, 0.09), k * 140));
     const st = starsFor(moves, L.par), last = idx === LEVELS.length - 1;
-    setTimeout(() => show(`<h2>${last ? 'The last lantern is home' : 'Home'}</h2>
+    setTimeout(() => show(`<h2>${last ? (window.LD_DAILY ? 'Home' : 'The last lantern is home') : 'Home'}</h2>
       <div class="stars">${'★'.repeat(st)}<span class="off">${'★'.repeat(3 - st)}</span></div>
       <p>${moves} moves · par ${L.par}${moves > L.par ? ' — it can be done in ' + L.par + '.' : moves === L.par ? ' — perfect.' : ''}</p>
-      <p>${last ? `Thank you for playing. ${totalStars()} / ${LEVELS.length * 3} stars.` : ''}</p>
-      <button id="again">Replay</button> ${last ? '<button id="lvls">All nights</button>' : '<button id="next">Next night →</button>'}`, last), 650);
+      <p>${last ? `` + (window.LD_DAILY ? LD_dailyDone() : `Thank you for playing. ${totalStars()} / ${LEVELS.length * 3} stars.`) : ''}</p>
+      <button id="again">Replay</button> ${last ? (window.LD_DAILY ? '<button id="lvls">Back to the river</button>' : '<button id="lvls">All nights</button>') : '<button id="next">Next night →</button>'}`, last), 650);
   }
   function totalStars() { return Object.entries(save.best).reduce((s, [i, m]) => s + starsFor(m, LEVELS[i].par), 0); }
   function unlocked(i) { return i === 0 || save.best[i - 1] != null || save.best[i] != null; }
@@ -202,8 +213,8 @@
     $('card').innerHTML = html; $('overlay').classList.add('on'); $('overlay').classList.toggle('art', !!art);
     const bind = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     bind('again', () => { hide(); load(idx); });
-    bind('next', () => { hide(); load(idx + 1); });
-    bind('lvls', levelMenu);
+    bind('next', () => { hide(); window.Portal ? Portal.midgame(() => load(idx + 1)) : load(idx + 1); });
+    bind('lvls', window.LD_DAILY ? LD_leaveDaily : levelMenu); bind('daily', LD_goDaily);
     bind('start', () => { hide(); load(save.last || 0); });
     $('card').querySelectorAll('.lv').forEach(b => b.onclick = () => { hide(); load(+b.dataset.i); });
   }
@@ -212,7 +223,7 @@
     show(`<h2>Nights</h2><p>${totalStars()} / ${LEVELS.length * 3} stars</p><div class="grid">${LEVELS.map((l, i) => {
       const b = save.best[i]; const st = b != null ? '★'.repeat(starsFor(b, l.par)) : '';
       return `<button class="lv" data-i="${i}" ${unlocked(i) ? '' : 'disabled'}>${i + 1}<small>${st}</small></button>`; }).join('')}</div>
-      <button onclick="document.getElementById('overlay').classList.remove('on')">Close</button>`);
+      <button id="daily">Tonight's lantern ✦</button> <button onclick="document.getElementById('overlay').classList.remove('on')">Close</button>`);
   }
 
   // ---------- input ----------
@@ -241,7 +252,7 @@
     }
     move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U'));
   });
-  $('undo').onclick = undo; $('hintb').onclick = hint; $('reset').onclick = () => load(idx); $('menu').onclick = levelMenu;
+  $('undo').onclick = undo; $('hintb').onclick = hint; $('reset').onclick = () => load(idx); $('menu').onclick = window.LD_DAILY ? LD_leaveDaily : levelMenu;
   $('snd').onclick = () => { sound = !sound; save.sound = sound; persist(); ambient(sound); $('snd').textContent = sound ? '♪ On' : '♪ Off'; };
   $('snd').textContent = sound ? '♪ On' : '♪ Off';
 
@@ -363,8 +374,8 @@
     <p>Each lantern drifts in a straight line until a stone or another lantern stops it. Lanterns of the same colour always drift together. Bring every lantern home to the ring of its colour.</p>
     <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
     <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>H</kbd> hint · <kbd>R</kbd> restart</p>
-    <button id="start">Light the first lantern</button>`, true);
-  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length) intro();
+    <button id="start">Light the first lantern</button> <button id="daily">Tonight's lantern ✦</button>`, true);
+  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length && !window.LD_DAILY) intro();
   // ---------- self-test (#selftest): plays every level's optimal solution through the real input path ----------
   if (location.hash === '#selftest') {
     hide(); const res = []; let li = 0;
