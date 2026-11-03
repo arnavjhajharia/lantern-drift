@@ -16,6 +16,10 @@
   h1 b { color:var(--a); font-weight:400; }
   .stat { color:var(--dim); font-size:14px; font-variant-numeric: tabular-nums; }
   .stat em { color:var(--ink); font-style:normal; }
+  h1 { white-space:nowrap; }
+  @media (max-width:480px) { .stat { font-size:12px; text-align:right; } h1 { letter-spacing:.1em; } button { padding:7px 12px; } }
+  #sky { position:fixed; inset:0; z-index:0; pointer-events:none; }
+  #app { position:relative; z-index:1; }
   #stage { flex:1; width:100%; display:flex; align-items:center; justify-content:center; min-height:0; }
   canvas { display:block; max-width:100%; max-height:100%; }
   #bar { width:min(640px,100%); display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:6px; }
@@ -40,6 +44,7 @@
 </style>
 </head>
 <body>
+<canvas id="sky" aria-hidden="true"></canvas>
 <div id="app">
   <header>
     <h1>Lantern <b>Drift</b></h1>
@@ -235,6 +240,27 @@
   $('snd').onclick = () => { sound = !sound; save.sound = sound; persist(); ambient(sound); $('snd').textContent = sound ? '♪ On' : '♪ Off'; };
   $('snd').textContent = sound ? '♪ On' : '♪ Off';
 
+  // ---------- sky: distant festival lanterns rising behind the river ----------
+  const sky = document.getElementById('sky'), sx = sky.getContext('2d'); let motes = [];
+  function skySize() { sky.width = innerWidth; sky.height = innerHeight;
+    motes = Array.from({ length: Math.round(innerWidth * innerHeight / 26000) }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+      r: 1 + Math.random() * 2.4, v: 4 + Math.random() * 10, ph: Math.random() * 6, c: ['#ffb347', '#ffcf7a', '#ff9f5a'][Math.floor(Math.random() * 3)] })); }
+  addEventListener('resize', skySize); skySize();
+  let skyT = performance.now();
+  function skyFrame(now) {
+    const dt = Math.min(0.1, (now - skyT) / 1000); skyT = now;
+    sx.clearRect(0, 0, sky.width, sky.height);
+    for (const m of motes) {
+      m.y -= m.v * dt; m.x += Math.sin(now / 2400 + m.ph) * 4 * dt;
+      if (m.y < -10) { m.y = sky.height + 10; m.x = Math.random() * sky.width; }
+      const a = 0.25 + 0.2 * Math.sin(now / 600 + m.ph);
+      const g = sx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r * 5);
+      g.addColorStop(0, m.c); g.addColorStop(1, m.c + '00');
+      sx.globalAlpha = a; sx.fillStyle = g; sx.beginPath(); sx.arc(m.x, m.y, m.r * 5, 0, 7); sx.fill();
+    }
+    sx.globalAlpha = 1;
+  }
+
   // ---------- render ----------
   function resize() {
     if (!B) return;
@@ -256,7 +282,7 @@
   let lastFrame = 0;
   function frame(now, fb) {
     if (!fb) requestAnimationFrame(frame);
-    lastFrame = performance.now();
+    lastFrame = performance.now(); skyFrame(now);
     if (!B) return;
     const T = (now - t0) / 1000, W = cell * B.w, H = cell * B.h;
     ctx.clearRect(0, 0, W, H);
