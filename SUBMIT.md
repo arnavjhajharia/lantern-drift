@@ -19,9 +19,9 @@ another lantern stops it, and every lantern of the same colour drifts together. 
 The game starts with one lantern and builds to three colours that you have to use as moving walls for each other.
 There are 28 nights. A solver checked every one, and each night's par is the proven minimum number of moves, so three
 stars always means a perfect solution. It plays in any browser with keyboard, swipe or tap. The colours also have shapes
-(circle, diamond, triangle), so it is colour-blind friendly. All sound is synthesised live.
+(circle, diamond, triangle), so it is colour-blind friendly. The music and sounds are CC0 recordings (credits below).
 
 **AI tools / disclosure (paste in the tools/notes field):**
 - Claude (Anthropic): co-wrote the game code, the level generator and the BFS solver that verifies every level.
 - Higgsfield (GPT Image 2.5 model): the one painted title/ending illustration (title.jpg), from an original prompt.
-- Everything else is code: the board is drawn on canvas and all sound is WebAudio synthesis. No third-party IP.
+- Everything else is code: the board is drawn on canvas. Audio = CC0 (public-domain) files, unmodified: music "Ambient Relaxing Loop" by isaiah658 (OpenGameArt.org); chime, bump and click from Kenney sound packs (kenney.nl). No generative audio and no other third-party IP. (Corrected by strategist s29: earlier text said "all sound is synthesised", which was true of an older build.) The 54 s gameplay video was recorded on that older build, so its audio is the earlier synthesised version.

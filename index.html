@@ -91,10 +91,19 @@
   let ac = null, bus = null;
   const SND = {}, SND_LOADING = {};
   function ctxA() { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); bus = ac.createGain(); bus.connect(ac.destination); ['chime', 'bump', 'click', 'music'].forEach(loadSnd); } return ac; }
+  // Prefetch the raw bytes at page load (no AudioContext needed), so the first tap only decodes:
+  // before this, the first chimes/clicks were silent while ~1.3 MB downloaded on a slow connection.
+  const OGG_OK = !!document.createElement('audio').canPlayType('audio/ogg; codecs="vorbis"');
+  const fetchBytes = ext => name => fetch('audio/' + name + '.' + ext).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); });
+  const RAW = {};
+  const EXT = n => OGG_OK ? 'ogg' : 'mp3'; // kept ogg for music: music.mp3 is smaller (197 KB vs 1.28 MB) but only 64 kbps
+  const ALT = n => EXT(n) === 'mp3' ? 'ogg' : 'mp3';
+  ['click', 'chime', 'bump', 'music'].forEach(n => { RAW[n] = fetchBytes(EXT(n))(n); RAW[n].catch(() => {}); });
   function loadSnd(name) {
     if (SND[name] || SND_LOADING[name]) return SND_LOADING[name];
-    const get = ext => fetch('audio/' + name + '.' + ext).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => new Promise((ok, no) => ac.decodeAudioData(b, ok, no)));
-    return (SND_LOADING[name] = get('ogg').catch(() => get('mp3')).then(b => (SND[name] = b)).catch(() => null));
+    const dec = b => new Promise((ok, no) => ac.decodeAudioData(b, ok, no));
+    const first = (RAW[name] || fetchBytes(EXT(name))(name)).then(dec);
+    return (SND_LOADING[name] = first.catch(() => fetchBytes(ALT(name))(name).then(dec)).then(b => (SND[name] = b)).catch(() => null));
   }
   const CHIME_HZ = 655; // measured fundamental of chime.ogg
   function play(name, rate = 1, gain = 0.5, dur = 0) {
