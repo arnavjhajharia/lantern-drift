@@ -212,10 +212,14 @@
       <p>${moves} moves · par ${L.par}${moves > L.par ? ' — it can be done in ' + L.par + '.' : moves === L.par ? ' — perfect.' : ''}</p>
       <p>${last ? `` + (window.LD_DAILY ? LD_dailyDone() : `Thank you for playing. ${totalStars()} / ${LEVELS.length * 3} stars.`) : ''}</p>
       <button id="again">Replay</button> ${last ? (window.LD_DAILY ? '<button id="lvls">Back to the river</button>' : '<button id="lvls">All nights</button>') : '<button id="next">Next night →</button>'}`, last), 650);
+    // after a solved night, carry on by itself: visible 4-s countdown on the Next button; Replay / Escape / any other card cancels it
+    if (!last) setTimeout(() => { const b = $('next'); if (!b) return; let n = 4; const tick = () => { if (!$('next') || !$('overlay').classList.contains('on')) return; if (n <= 0) { $('next').click(); return; } b.textContent = `Next night in ${n}…`; n--; autoT = setTimeout(tick, 1000); }; tick(); }, 700);
   }
+  let autoT = null;
   function totalStars() { return Object.entries(save.best).reduce((s, [i, m]) => s + starsFor(m, LEVELS[i].par), 0); }
   function unlocked(i) { return i === 0 || save.best[i - 1] != null || save.best[i] != null; }
   function show(html, art) {
+    clearTimeout(autoT);
     $('card').innerHTML = html; $('overlay').classList.add('on'); $('overlay').classList.toggle('art', !!art);
     const bind = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     bind('again', () => { hide(); load(idx); });
@@ -224,7 +228,7 @@
     bind('start', () => { hide(); load(save.last || 0); });
     $('card').querySelectorAll('.lv').forEach(b => b.onclick = () => { hide(); load(+b.dataset.i); });
   }
-  function hide() { $('overlay').classList.remove('on'); }
+  function hide() { clearTimeout(autoT); $('overlay').classList.remove('on'); }
   function levelMenu() {
     show(`<h2>Nights</h2><p>${totalStars()} / ${LEVELS.length * 3} stars</p><div class="grid">${LEVELS.map((l, i) => {
       const b = save.best[i]; const st = b != null ? '★'.repeat(starsFor(b, l.par)) : '';
