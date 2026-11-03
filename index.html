@@ -84,20 +84,30 @@
   let L, B, pieces, hist, sel = 0, moves = 0, anim = null, idx = 0, won = false, sound = save.sound !== false;
   let cell = 48, ox = 0, oy = 0, t0 = performance.now(), ripples = [];
 
-  // ---------- audio: soft pentatonic chimes, all synthesized ----------
+  // ---------- audio: produced CC0 sample files (audio/CREDITS.txt), no synthesized sound ----------
+  // Each note is ONE recorded glass chime (audio/chime.*) played at a different speed, so the pentatonic melody stays.
   let ac = null, bus = null;
-  function ctxA() { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); bus = ac.createGain(); bus.connect(ac.destination); } return ac; }
+  const SND = {}, SND_LOADING = {};
+  function ctxA() { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); bus = ac.createGain(); bus.connect(ac.destination); ['chime', 'bump', 'click', 'music'].forEach(loadSnd); } return ac; }
+  function loadSnd(name) {
+    if (SND[name] || SND_LOADING[name]) return SND_LOADING[name];
+    const get = ext => fetch('audio/' + name + '.' + ext).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => new Promise((ok, no) => ac.decodeAudioData(b, ok, no)));
+    return (SND_LOADING[name] = get('ogg').catch(() => get('mp3')).then(b => (SND[name] = b)).catch(() => null));
+  }
+  const CHIME_HZ = 655; // measured fundamental of chime.ogg
+  function play(name, rate = 1, gain = 0.5, dur = 0) {
+    if (!sound) return; ctxA();
+    const b = SND[name]; if (!b) return;
+    const t = ac.currentTime, s = ac.createBufferSource(), g = ac.createGain();
+    s.buffer = b; s.playbackRate.value = rate; g.gain.value = gain;
+    if (dur) { g.gain.setValueAtTime(gain, t + dur * 0.7); g.gain.linearRampToValueAtTime(0.0001, t + dur); }
+    s.connect(g); g.connect(bus); s.start(t); if (dur) s.stop(t + dur + 0.02);
+  }
   const PENTA = [0, 2, 4, 7, 9, 12, 14, 16];
+  // same signature as before: semitones above C5, length, loudness. The 4th arg used to pick an oscillator: now 'triangle' = the soft bump.
   function chime(semi, dur = 0.9, gain = 0.12, type = 'sine') {
-    if (!sound) return;
-    ctxA();
-    const t = ac.currentTime, o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain();
-    const f = 261.63 * Math.pow(2, semi / 12);
-    o.type = type; o.frequency.value = f; o2.type = 'sine'; o2.frequency.value = f * 2.005;
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    const g2 = ac.createGain(); g2.gain.value = 0.25;
-    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bus);
-    o.start(t); o2.start(t); o.stop(t + dur); o2.stop(t + dur);
+    if (type === 'triangle') return play('bump', 1, Math.min(1, gain * 10));
+    play('chime', 523.25 * Math.pow(2, semi / 12) / CHIME_HZ, Math.min(1, gain * 5), Math.max(dur, 0.3) * 1.6);
   }
 
   let amb = null;
@@ -106,27 +116,15 @@
     ctxA();
     if (!amb) {
       const g = ac.createGain(); g.gain.value = 0; g.connect(bus);
-      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.connect(g);
-      // river: looped brown noise through a slow-moving bandpass
-      const len = ac.sampleRate * 4, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0); let last = 0;
-      for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.2; }
-      const n = ac.createBufferSource(); n.buffer = buf; n.loop = true;
-      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.6;
-      const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 220; lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
-      const ng = ac.createGain(); ng.gain.value = 0.35; n.connect(bp); bp.connect(ng); ng.connect(g); n.start();
-      // pad: slow pentatonic chords, two detuned voices each
-      const voices = [0, 1, 2].map(() => { const o1 = ac.createOscillator(), o2 = ac.createOscillator(), vg = ac.createGain();
-        o1.type = 'triangle'; o2.type = 'sine'; o2.detune.value = 7; vg.gain.value = 0.045; o1.connect(vg); o2.connect(vg); vg.connect(lp); o1.start(); o2.start(); return [o1, o2]; });
-      const CH = [[-12, -5, 2], [-15, -8, 0], [-17, -10, -3], [-12, -3, 4]]; let ci = 0;
-      const next = () => { const c = CH[ci++ % CH.length], t = ac.currentTime;
-        voices.forEach(([o1, o2], k) => { const f = 261.63 * Math.pow(2, c[k] / 12); o1.frequency.setTargetAtTime(f, t, 1.5); o2.frequency.setTargetAtTime(f, t, 1.5); }); };
-      next(); setInterval(next, 9000);
-      amb = { g };
+      amb = { g, src: null };
+      loadSnd('music').then(b => { if (!b || amb.src) return; const s = ac.createBufferSource(); s.buffer = b; s.loop = true; s.connect(g); s.start(); amb.src = s; });
     }
-    amb.g.gain.setTargetAtTime(0.55, ac.currentTime, 1.2);
+    amb.g.gain.setTargetAtTime(0.45, ac.currentTime, 1.2);
   }
   addEventListener('pointerdown', () => sound && ambient(true), { once: true });
   addEventListener('keydown', () => sound && ambient(true), { once: true });
+  // interface sound: every button press clicks
+  addEventListener('click', e => { if (e.target.closest && e.target.closest('button')) play('click', 1, 0.35); }, true);
 
   // ---------- level / state ----------
   function load(i) {
@@ -145,6 +143,14 @@
       : idx === 8 ? 'Lanterns of one colour always drift together — use one to stop the other.'
       : idx === 18 ? 'Three colours. Every night has a solution in exactly par moves.' : '';
     save.last = idx; persist(); resize();
+    // s22: on Night 1, pulse the first-move arrow ~0.7 s after load (and every 4.5 s until the first move) so a new player knows what to do without reading.
+    clearTimeout(nudgeT);
+    if (idx === 0 && !window.LD_DAILY) {
+      const nudge = () => { if (idx !== 0 || moves || won) return;
+        if (!anim && (!hintA || performance.now() - hintA.t > 4000)) { const r = LD.solve(B, pieces, 50000); if (r && r.len > 0) hintA = { c: r.path[0][0], d: r.path[0][1], t: performance.now() }; }
+        nudgeT = setTimeout(nudge, 4500); };
+      nudgeT = setTimeout(nudge, 700);
+    }
   }
   function persist() { localStorage.setItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save', JSON.stringify(save)); }
   function select(c) {
@@ -163,7 +169,7 @@
     const me = anim; setTimeout(() => { if (anim === me) onSettled(); }, anim.dur);
     chime(PENTA[sel * 2 + (moves % 3)] , 0.7, 0.08);
   }
-  let hintA = null;
+  let hintA = null, nudgeT = 0;
   function hint() {
     if (won || anim) return;
     if (window.Portal && Portal.canReward && (save.hints | 0) >= 3) {
@@ -375,7 +381,7 @@
     <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
     <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>H</kbd> hint · <kbd>R</kbd> restart</p>
     <button id="start">Light the first lantern</button> <button id="daily">Tonight's lantern ✦</button>`, true);
-  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length && !window.LD_DAILY) intro();
+  if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length && !window.LD_DAILY && !window.bridge) intro(); // on Playgama (window.bridge) players land straight on Night 1; its in-board hint teaches the rules
   // ---------- self-test (#selftest): plays every level's optimal solution through the real input path ----------
   if (location.hash === '#selftest') {
     hide(); const res = []; let li = 0;

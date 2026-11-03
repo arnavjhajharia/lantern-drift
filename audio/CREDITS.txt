@@ -1,0 +1,6 @@
+All audio in this folder is CC0 1.0 (public domain), shipped as produced audio files.
+music.ogg  - "Ambient Relaxing Loop" by isaiah658, OpenGameArt.org (CC0). Unmodified.
+chime.ogg  - Kenney "Interface Sounds" glass_004 (kenney.nl, CC0). Played at different speeds for each note.
+bump.ogg   - Kenney "Impact Sounds" impactSoft_medium_000 (CC0).
+click.ogg  - Kenney "UI Audio" click1 (CC0).
+mp3 copies are format conversions of the same CC0 files (for Safari).
