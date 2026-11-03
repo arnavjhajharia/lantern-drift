@@ -25,7 +25,8 @@
   canvas { display:block; max-width:100%; max-height:100%; }
   #bar { width:min(640px,100%); display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:6px; }
   button { font:inherit; color:var(--ink); background:#ffffff0d; border:1px solid #ffffff22; border-radius:999px; padding:8px 16px; cursor:pointer; }
-  button:hover { background:#ffffff1a; }
+  @media (hover:hover) { button:hover { background:#ffffff1a; } } /* s33: no sticky hover after a tap */
+  @media (pointer:coarse) { button { min-height:44px; } } /* s33: 44px touch targets */
   button.sel { border-color:currentColor; background:#ffffff14; }
   @keyframes ldstall { 0%,100% { box-shadow:0 0 0 0 #ffd27a00; } 50% { box-shadow:0 0 0 6px #ffd27a55; border-color:#ffd27a; } }
   button.stall { animation:ldstall 1.4s ease-in-out infinite; color:#ffd27a; }
@@ -81,6 +82,7 @@
   const COL = ['#ffb347', '#4fd1a5', '#b48cff'], NAME = ['amber', 'jade', 'violet'], GLYPH = ['●', '◆', '▲'];
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   const $ = id => document.getElementById(id);
+  const TOUCH = matchMedia("(hover: none) and (pointer: coarse)").matches; // touch-only device: hide keyboard-key hints (s33)
   const save = JSON.parse(localStorage.getItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save') || '{}'); // {best:{i:moves}}
   save.best = save.best || {};
   let L, B, pieces, hist, sel = 0, moves = 0, anim = null, idx = 0, won = false, sound = save.sound !== false;
@@ -149,8 +151,8 @@
     $('chips').innerHTML = cols.length > 1 ? cols.map(c => `<button class="chip" data-c="${c}" style="color:${COL[c]}" title="${NAME[c]} (${c + 1})">${GLYPH[c]}</button>`).join(' ') : '';
     document.querySelectorAll('.chip').forEach(b => b.onclick = () => select(+b.dataset.c));
     select(sel);
-    $('hint').innerHTML = idx === 0 ? 'Swipe or use <kbd>←↑→↓</kbd>. A lantern drifts until something stops it. Bring it to the ring of its colour.'
-      : idx === 4 ? 'Two colours now: tap a lantern (or <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>) to choose which colour drifts.'
+    $('hint').innerHTML = idx === 0 ? (TOUCH ? 'Swipe to drift.' : 'Swipe or use <kbd>←↑→↓</kbd>.') + ' A lantern drifts until something stops it. Bring it to the ring of its colour.'
+      : idx === 4 ? (TOUCH ? 'Two colours now: tap a lantern to choose which colour drifts.' : 'Two colours now: tap a lantern (or <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>) to choose which colour drifts.')
       : idx === 8 ? 'Lanterns of one colour always drift together — use one to stop the other.'
       : idx === 18 ? 'Three colours. Every night has a solution in exactly par moves.' : '';
     save.last = idx; persist(); resize();
@@ -165,7 +167,7 @@
   function armStall() { clearTimeout(stallT); $('hintb').classList.remove('stall'); if (idx > 0 && !window.LD_DAILY) stallT = setTimeout(stall, STALL_MS); }
   function stall() { if (won) return; if (anim) { stallT = setTimeout(stall, 400); return; }
     const r = LD.solve(B, pieces, 50000);
-    if (r && r.len === -1) { $('hint').innerHTML = 'This drift has no way home. <kbd>Z</kbd> undo or <kbd>R</kbd> restart.'; return; }
+    if (r && r.len === -1) { $('hint').innerHTML = (TOUCH ? 'This drift has no way home. Tap <b>↶ Undo</b> or <b>⟲ Restart</b>.' : 'This drift has no way home. <kbd>Z</kbd> undo or <kbd>R</kbd> restart.'); return; }
     $('hintb').classList.add('stall'); $('hint').innerHTML = 'Stuck? <b>✦ Hint</b> shows the next drift.'; }
   function persist() { localStorage.setItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save', JSON.stringify(save)); }
   function select(c) {
@@ -406,7 +408,7 @@
     <p>On the night of the river festival, the lanterns have drifted loose.</p>
     <p>Each lantern drifts in a straight line until a stone or another lantern stops it. Lanterns of the same colour always drift together. Bring every lantern home to the ring of its colour.</p>
     <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
-    <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>H</kbd> hint · <kbd>R</kbd> restart</p>
+    ${TOUCH ? 'swipe to drift · tap a lantern to choose its colour · ↶ undo · ✦ hint · ⟲ restart' : '<kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>H</kbd> hint · <kbd>R</kbd> restart'}</p>
     <button id="start">Light the first lantern</button> <button id="daily">Tonight's lantern ✦</button>`, true);
   if (!hl && !/#(selftest|demo)/.test(location.hash) && !Object.keys(save.best).length && !window.LD_DAILY && !window.bridge) intro(); // on Playgama (window.bridge) players land straight on Night 1; its in-board hint teaches the rules
   // ---------- self-test (#selftest): plays every level's optimal solution through the real input path ----------
