@@ -1,5 +1,7 @@
 # Lantern Drift
 
+**Play:** [Playgama](https://playgama.ai/play/nvk6egiap5t7kd) · [GitHub Pages](https://arnavjhajharia.github.io/lantern-drift/) · [gameplay video](https://youtu.be/_LqOpMJtgDI)
+
 A small original sliding puzzle for the web. Lanterns drift in a straight line until a stone or another lantern stops them;
 lanterns of the same colour always drift together. Bring each one home to the ring of its colour.
 
