@@ -257,7 +257,10 @@
     if (Math.hypot(dx, dy) < 18) { // tap: select lantern under finger, or move selected toward tap
       const gx = Math.floor(((e.clientX - r.left) * sc - ox) / cell), gy = Math.floor(((e.clientY - r.top) * sc - oy) / cell);
       const p = pieces.find(p => p.x === gx && p.y === gy);
-      if (p) { select(p.c); chime(PENTA[p.c * 2], 0.25, 0.05); }
+      if (p) { select(p.c); chime(PENTA[p.c * 2], 0.25, 0.05); return; }
+      const q = pieces.find(p => p.c === sel); if (!q) return; // tap on empty water: the selected lantern drifts toward the tap
+      const tx = gx - q.x, ty = gy - q.y; if (!tx && !ty) return;
+      move(Math.abs(tx) >= Math.abs(ty) ? (tx > 0 ? 'R' : 'L') : (ty > 0 ? 'D' : 'U'));
       return;
     }
     move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U'));
