@@ -145,12 +145,8 @@
     save.last = idx; persist(); resize();
     // s22: on Night 1, pulse the first-move arrow ~0.7 s after load (and every 4.5 s until the first move) so a new player knows what to do without reading.
     clearTimeout(nudgeT);
-    if (idx === 0 && !window.LD_DAILY) {
-      const nudge = () => { if (idx !== 0 || moves || won) return;
-        if (!anim && (!hintA || performance.now() - hintA.t > 4000)) { const r = LD.solve(B, pieces, 50000); if (r && r.len > 0) hintA = { c: r.path[0][0], d: r.path[0][1], t: performance.now() }; }
-        nudgeT = setTimeout(nudge, 4500); };
-      nudgeT = setTimeout(nudge, 700);
-    }
+    // s20b: the arrow now guides EVERY move of Night 1 (its solution is 4 moves and the lantern overshoots its ring on the first), re-solved from the current state, so a player who strays is still led home.
+    if (idx === 0 && !window.LD_DAILY) nudgeT = setTimeout(nudge, 700);
   }
   function persist() { localStorage.setItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save', JSON.stringify(save)); }
   function select(c) {
@@ -167,9 +163,13 @@
     anim = { from: pieces, to: r.pieces, moved: r.moved, t: performance.now(), dur: 90 + dist * 55 };
     pieces = r.pieces;
     const me = anim; setTimeout(() => { if (anim === me) onSettled(); }, anim.dur);
+    if (idx === 0 && !window.LD_DAILY) { clearTimeout(nudgeT); nudgeT = setTimeout(nudge, anim.dur + 450); }
     chime(PENTA[sel * 2 + (moves % 3)] , 0.7, 0.08);
   }
   let hintA = null, nudgeT = 0;
+  function nudge() { clearTimeout(nudgeT); if (idx !== 0 || won || window.LD_DAILY) return;
+    if (!anim && (!hintA || performance.now() - hintA.t > 4000)) { const r = LD.solve(B, pieces, 50000); if (r && r.len > 0) hintA = { c: r.path[0][0], d: r.path[0][1], t: performance.now() }; }
+    nudgeT = setTimeout(nudge, anim ? 300 : 4500); }
   function hint() {
     if (won || anim) return;
     if (window.Portal && Portal.canReward && (save.hints | 0) >= 3) {
