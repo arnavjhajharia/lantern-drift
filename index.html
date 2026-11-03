@@ -27,6 +27,8 @@
   button { font:inherit; color:var(--ink); background:#ffffff0d; border:1px solid #ffffff22; border-radius:999px; padding:8px 16px; cursor:pointer; }
   button:hover { background:#ffffff1a; }
   button.sel { border-color:currentColor; background:#ffffff14; }
+  @keyframes ldstall { 0%,100% { box-shadow:0 0 0 0 #ffd27a00; } 50% { box-shadow:0 0 0 6px #ffd27a55; border-color:#ffd27a; } }
+  button.stall { animation:ldstall 1.4s ease-in-out infinite; color:#ffd27a; }
   .chip { width:44px; padding:8px 0; font-size:18px; }
   #hint { color:var(--dim); font-size:13px; text-align:center; margin-top:6px; min-height:1.3em; }
   #overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:#04070fcc; backdrop-filter: blur(3px); z-index:5; }
@@ -147,7 +149,15 @@
     clearTimeout(nudgeT);
     // s20b: the arrow now guides EVERY move of Night 1 (its solution is 4 moves and the lantern overshoots its ring on the first), re-solved from the current state, so a player who strays is still led home.
     if (idx === 0 && !window.LD_DAILY) nudgeT = setTimeout(nudge, 700);
+    armStall();
   }
+  // s28 stall nudge: on Night 2+, after STALL_MS without a solve the Hint button pulses and the line offers it (dead end -> undo/restart). Re-arms after each hint.
+  const STALL_MS = window.LD_STALL_MS || 45000; let stallT = 0;
+  function armStall() { clearTimeout(stallT); $('hintb').classList.remove('stall'); if (idx > 0 && !window.LD_DAILY) stallT = setTimeout(stall, STALL_MS); }
+  function stall() { if (won) return; if (anim) { stallT = setTimeout(stall, 400); return; }
+    const r = LD.solve(B, pieces, 50000);
+    if (r && r.len === -1) { $('hint').innerHTML = 'This drift has no way home. <kbd>Z</kbd> undo or <kbd>R</kbd> restart.'; return; }
+    $('hintb').classList.add('stall'); $('hint').innerHTML = 'Stuck? <b>✦ Hint</b> shows the next drift.'; }
   function persist() { localStorage.setItem(window.LD_DAILY ? 'ld-daily-' + LD_DAILY.day : 'ld-save', JSON.stringify(save)); }
   function select(c) {
     if (!pieces.some(p => p.c === c)) return;
@@ -183,6 +193,7 @@
   }
   function hint2() {
     if (won || anim) return;
+    armStall();
     const r = LD.solve(B, pieces, 400000);
     if (!r || r.len <= 0) { $('hint').textContent = r && r.len === -1 ? 'No way home from here. Undo or restart.' : 'Too tangled to see. Try undo.'; return; }
     const [c, d] = r.path[0]; select(c);
@@ -203,7 +214,7 @@
   }
   function starsFor(m, par) { return m <= par ? 3 : m <= Math.ceil(par * 1.5) ? 2 : 1; }
   function win() {
-    won = true; if (window.Portal) Portal.stop();
+    won = true; clearTimeout(stallT); $('hintb').classList.remove('stall'); if (window.Portal) Portal.stop();
     const prev = save.best[idx]; if (!prev || moves < prev) save.best[idx] = moves; persist();
     [0, 4, 7, 12].forEach((s, k) => setTimeout(() => chime(s + 7, 1.6, 0.09), k * 140));
     const st = starsFor(moves, L.par), last = idx === LEVELS.length - 1;
