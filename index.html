@@ -48,6 +48,7 @@
   <div id="stage"><canvas id="cv" aria-label="puzzle board"></canvas></div>
   <div id="bar">
     <span id="chips"></span>
+    <button id="hintb" title="Hint (H)">✦ Hint</button>
     <button id="undo" title="Undo (Z)">↶ Undo</button>
     <button id="reset" title="Restart (R)">⟲ Restart</button>
     <button id="menu" title="Levels (M)">☰ Nights</button>
@@ -70,19 +71,48 @@
   let cell = 48, ox = 0, oy = 0, t0 = performance.now(), ripples = [];
 
   // ---------- audio: soft pentatonic chimes, all synthesized ----------
-  let ac = null;
+  let ac = null, bus = null;
+  function ctxA() { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); bus = ac.createGain(); bus.connect(ac.destination); } return ac; }
   const PENTA = [0, 2, 4, 7, 9, 12, 14, 16];
   function chime(semi, dur = 0.9, gain = 0.12, type = 'sine') {
     if (!sound) return;
-    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    ctxA();
     const t = ac.currentTime, o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain();
     const f = 261.63 * Math.pow(2, semi / 12);
     o.type = type; o.frequency.value = f; o2.type = 'sine'; o2.frequency.value = f * 2.005;
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     const g2 = ac.createGain(); g2.gain.value = 0.25;
-    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(ac.destination);
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bus);
     o.start(t); o2.start(t); o.stop(t + dur); o2.stop(t + dur);
   }
+
+  let amb = null;
+  function ambient(on) {
+    if (!on) { if (amb) { amb.g.gain.setTargetAtTime(0, ac.currentTime, 0.6); } return; }
+    ctxA();
+    if (!amb) {
+      const g = ac.createGain(); g.gain.value = 0; g.connect(bus);
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.connect(g);
+      // river: looped brown noise through a slow-moving bandpass
+      const len = ac.sampleRate * 4, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0); let last = 0;
+      for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.2; }
+      const n = ac.createBufferSource(); n.buffer = buf; n.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.6;
+      const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 220; lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
+      const ng = ac.createGain(); ng.gain.value = 0.35; n.connect(bp); bp.connect(ng); ng.connect(g); n.start();
+      // pad: slow pentatonic chords, two detuned voices each
+      const voices = [0, 1, 2].map(() => { const o1 = ac.createOscillator(), o2 = ac.createOscillator(), vg = ac.createGain();
+        o1.type = 'triangle'; o2.type = 'sine'; o2.detune.value = 7; vg.gain.value = 0.045; o1.connect(vg); o2.connect(vg); vg.connect(lp); o1.start(); o2.start(); return [o1, o2]; });
+      const CH = [[-12, -5, 2], [-15, -8, 0], [-17, -10, -3], [-12, -3, 4]]; let ci = 0;
+      const next = () => { const c = CH[ci++ % CH.length], t = ac.currentTime;
+        voices.forEach(([o1, o2], k) => { const f = 261.63 * Math.pow(2, c[k] / 12); o1.frequency.setTargetAtTime(f, t, 1.5); o2.frequency.setTargetAtTime(f, t, 1.5); }); };
+      next(); setInterval(next, 9000);
+      amb = { g };
+    }
+    amb.g.gain.setTargetAtTime(0.55, ac.currentTime, 1.2);
+  }
+  addEventListener('pointerdown', () => sound && ambient(true), { once: true });
+  addEventListener('keydown', () => sound && ambient(true), { once: true });
 
   // ---------- level / state ----------
   function load(i) {
@@ -111,12 +141,27 @@
     if (won || anim) return;
     const r = LD.step(B, pieces, sel, dir);
     if (!r.moved.length) { chime(-12, 0.25, 0.05, 'triangle'); bump(dir); return; }
-    hist.push(pieces); moves++; $('mv').textContent = moves;
+    hintA = null; hist.push(pieces); moves++; $('mv').textContent = moves;
     const dist = Math.max(...r.moved.map(m => Math.abs(m.to.x - m.from.x) + Math.abs(m.to.y - m.from.y)));
     anim = { from: pieces, to: r.pieces, moved: r.moved, t: performance.now(), dur: 90 + dist * 55 };
     pieces = r.pieces;
     const me = anim; setTimeout(() => { if (anim === me) onSettled(); }, anim.dur);
     chime(PENTA[sel * 2 + (moves % 3)] , 0.7, 0.08);
+  }
+  let hintA = null;
+  function hint() {
+    if (won || anim) return;
+    $('hint').textContent = 'Reading the current…';
+    setTimeout(hint2, 30);
+  }
+  function hint2() {
+    if (won || anim) return;
+    const r = LD.solve(B, pieces, 400000);
+    if (!r || r.len <= 0) { $('hint').textContent = r && r.len === -1 ? 'No way home from here. Undo or restart.' : 'Too tangled to see. Try undo.'; return; }
+    const [c, d] = r.path[0]; select(c);
+    hintA = { c, d, t: performance.now() };
+    $('hint').textContent = `${r.len} move${r.len > 1 ? 's' : ''} from home. Try drifting ${NAME[c]} ${({U:'up',D:'down',L:'left',R:'right'})[d]}.`;
+    chime(PENTA[5], 0.6, 0.06);
   }
   let bumpA = null;
   function bump(dir) { bumpA = { dir, t: performance.now() }; }
@@ -170,6 +215,7 @@
     else if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') undo();
     else if (e.key === 'r' || e.key === 'R') load(idx);
     else if (e.key === 'm' || e.key === 'M') levelMenu();
+    else if (e.key === 'h' || e.key === 'H') hint();
   });
   let down = null;
   cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
@@ -185,8 +231,8 @@
     }
     move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U'));
   });
-  $('undo').onclick = undo; $('reset').onclick = () => load(idx); $('menu').onclick = levelMenu;
-  $('snd').onclick = () => { sound = !sound; save.sound = sound; persist(); $('snd').textContent = sound ? '♪ On' : '♪ Off'; };
+  $('undo').onclick = undo; $('hintb').onclick = hint; $('reset').onclick = () => load(idx); $('menu').onclick = levelMenu;
+  $('snd').onclick = () => { sound = !sound; save.sound = sound; persist(); ambient(sound); $('snd').textContent = sound ? '♪ On' : '♪ Off'; };
   $('snd').textContent = sound ? '♪ On' : '♪ Off';
 
   // ---------- render ----------
@@ -263,8 +309,18 @@
       if (isSel && new Set(pieces.map(q => q.c)).size > 1) { ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.lineDashOffset = -T * 12;
         ctx.beginPath(); ctx.arc(cx, cy, cell * 0.42, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
     });
+    if (hintA && now - hintA.t < 4000) {
+      const [dx, dy] = LD.DIRS[hintA.d], a = 0.5 + 0.5 * Math.sin((now - hintA.t) / 140);
+      ctx.fillStyle = COL[hintA.c]; ctx.globalAlpha = 0.35 + a * 0.5;
+      for (const p of pieces) if (p.c === hintA.c) {
+        const cx = p.x * cell + cell / 2 + dx * cell * 0.62, cy = p.y * cell + cell / 2 + dy * cell * 0.62, r = cell * 0.16;
+        ctx.beginPath(); ctx.moveTo(cx + dx * r, cy + dy * r); ctx.lineTo(cx - dx * r + dy * r, cy - dy * r + dx * r); ctx.lineTo(cx - dx * r - dy * r, cy - dy * r - dx * r); ctx.closePath(); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
+  // (hint arrows drawn in frame)
   // ---------- boot ----------
   if (!window.LEVELS || !LEVELS.length) { document.body.innerHTML = '<p style="padding:20px">levels.js missing</p>'; return; }
   const hl = /#lv=(\d+)/.exec(location.hash);
@@ -275,26 +331,36 @@
     <p>On the night of the river festival, the lanterns have drifted loose.</p>
     <p>Each lantern drifts in a straight line until a stone or another lantern stops it. Lanterns of the same colour always drift together. Bring every lantern home to the ring of its colour.</p>
     <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
-    <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>R</kbd> restart</p>
+    <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>H</kbd> hint · <kbd>R</kbd> restart</p>
     <button id="start">Light the first lantern</button>`);
   // ---------- self-test (#selftest): plays every level's optimal solution through the real input path ----------
   if (location.hash === '#selftest') {
     hide(); const res = []; let li = 0;
+    load(LEVELS.length - 1); hint2(); const hintOk = /moves? from home/.test($('hint').textContent) && hintA != null;
     const run = () => { load(li); const sol = LEVELS[li].sol.split(' '); let k = 0;
       const tick = () => { if (anim) return setTimeout(tick, 30);
         if (k < sol.length) { select(+sol[k][0]); move(sol[k][1]); k++; return setTimeout(tick, 30); }
         setTimeout(() => { res.push(won && moves === LEVELS[li].par ? 1 : 0); hide(); li++;
-          if (li < LEVELS.length) run(); else { const ok = res.filter(Boolean).length; document.title = 'SELFTEST ' + ok + '/' + res.length; document.body.setAttribute('data-selftest', ok + '/' + res.length); } }, 60); };
+          if (li < LEVELS.length) run(); else { const ok = res.filter(Boolean).length; document.title = 'SELFTEST ' + ok + '/' + res.length + (hintOk ? ' hint-ok' : ' HINT-FAIL'); document.body.setAttribute('data-selftest', ok + '/' + res.length + (hintOk ? ' hint-ok' : ' HINT-FAIL')); } }, 60); };
       tick(); };
     run();
   }
   // ---------- demo (#demo): auto-plays a few nights at human pace, used to record the gameplay video ----------
-  if (location.hash === '#demo') {
+  if (location.hash.startsWith('#demo')) {
+    if (location.hash === '#demo-rec') {
+      ctxA(); ambient(true); const dst = ac.createMediaStreamDestination(); bus.connect(dst);
+      const rec = new MediaRecorder(dst.stream, { mimeType: 'audio/webm;codecs=opus' }), chunks = [];
+      rec.ondataavailable = e => chunks.push(e.data);
+      rec.onstop = async () => { const b = new Blob(chunks, { type: 'audio/webm' }); const u8 = new Uint8Array(await b.arrayBuffer());
+        let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+        window.__audio = btoa(bin); document.title = 'DEMO DONE'; };
+      rec.start(); window.__audioStart = Date.now(); window.__stopRec = () => rec.stop();
+    }
     const plan = [0, 4, 9, 18, 23]; let pi = 0;
     const play = () => { hide(); load(plan[pi]); const sol = LEVELS[plan[pi]].sol.split(' '); let k = 0;
       const tick = () => { if (anim) return setTimeout(tick, 40);
         if (k < sol.length) { const c = +sol[k][0]; if (c !== sel) { select(c); setTimeout(tick, 380); return; } move(sol[k][1]); k++; return setTimeout(tick, 520); }
-        setTimeout(() => { pi++; if (pi < plan.length) play(); else document.title = 'DEMO DONE'; }, 2600); };
+        setTimeout(() => { pi++; if (pi < plan.length) play(); else if (window.__stopRec) window.__stopRec(); else document.title = 'DEMO DONE'; }, 2600); };
       setTimeout(tick, 900); };
     play();
   }

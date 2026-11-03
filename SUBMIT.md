@@ -7,7 +7,7 @@ Submit at https://submit.chromaawards.com/ (deadline Jan 7 2027, 11:45pm PT; no 
 | Division / Category | Game → **Puzzle & Strategy** |
 | Title | Lantern Drift |
 | Public project link (playable, web, no download) | https://arnavjhajharia.github.io/lantern-drift/ |
-| Download link (gameplay video) | https://arnavjhajharia.github.io/lantern-drift/gameplay.mp4 (51 s, 1280x720, H.264) |
+| Download link (gameplay video) | https://arnavjhajharia.github.io/lantern-drift/gameplay.mp4 (50 s, 1280x720, H.264 + AAC, game audio) |
 | Thumbnail | https://arnavjhajharia.github.io/lantern-drift/thumb.png |
 | Language | English |
 
