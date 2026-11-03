@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lantern Drift — a sliding-light puzzle</title>
+<meta name="description" content="Lantern Drift: guide drifting lanterns of the same colour home together. 28 hand-checked puzzles, every one solver-verified with an optimal par.">
+<style>
+  :root { --bg:#070b16; --ink:#e9e4d4; --dim:#8a8fa3; --a:#ffb347; --b:#4fd1a5; --c:#b48cff; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:radial-gradient(ellipse at 50% 20%, #13203a 0%, var(--bg) 70%); color:var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; overflow:hidden; touch-action:none; user-select:none; }
+  #app { display:flex; flex-direction:column; align-items:center; height:100%; padding:12px 12px calc(12px + env(safe-area-inset-bottom)); }
+  header { width:min(640px,100%); display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  h1 { font-weight:400; letter-spacing:.18em; font-size:clamp(16px,3.6vw,22px); margin:4px 0; text-transform:uppercase; }
+  h1 b { color:var(--a); font-weight:400; }
+  .stat { color:var(--dim); font-size:14px; font-variant-numeric: tabular-nums; }
+  .stat em { color:var(--ink); font-style:normal; }
+  #stage { flex:1; width:100%; display:flex; align-items:center; justify-content:center; min-height:0; }
+  canvas { display:block; max-width:100%; max-height:100%; }
+  #bar { width:min(640px,100%); display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:6px; }
+  button { font:inherit; color:var(--ink); background:#ffffff0d; border:1px solid #ffffff22; border-radius:999px; padding:8px 16px; cursor:pointer; }
+  button:hover { background:#ffffff1a; }
+  button.sel { border-color:currentColor; background:#ffffff14; }
+  .chip { width:44px; padding:8px 0; font-size:18px; }
+  #hint { color:var(--dim); font-size:13px; text-align:center; margin-top:6px; min-height:1.3em; }
+  #overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:#04070fcc; backdrop-filter: blur(3px); z-index:5; }
+  #overlay.on { display:flex; }
+  .card { background:#0d1528; border:1px solid #ffffff1f; border-radius:18px; padding:22px 24px; width:min(560px,92vw); max-height:88vh; overflow:auto; text-align:center; }
+  .card h2 { font-weight:400; letter-spacing:.12em; margin:0 0 8px; }
+  .card p { color:#c9c4b4; line-height:1.5; margin:8px 0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:8px; margin:14px 0; }
+  .lv { border-radius:12px; padding:8px 0; font-size:15px; }
+  .lv small { display:block; font-size:11px; color:var(--a); letter-spacing:2px; min-height:14px; }
+  .lv[disabled] { opacity:.3; cursor:default; }
+  .stars { font-size:34px; letter-spacing:6px; color:var(--a); margin:6px 0; }
+  .stars .off { color:#ffffff22; }
+  kbd { font-family:ui-monospace,monospace; font-size:12px; border:1px solid #ffffff33; border-radius:4px; padding:1px 5px; }
+  a { color:var(--b); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Lantern <b>Drift</b></h1>
+    <div class="stat">Night <em id="lvn">1</em>/<span id="lvt">28</span> · moves <em id="mv">0</em> · par <em id="par">0</em></div>
+  </header>
+  <div id="stage"><canvas id="cv" aria-label="puzzle board"></canvas></div>
+  <div id="bar">
+    <span id="chips"></span>
+    <button id="undo" title="Undo (Z)">↶ Undo</button>
+    <button id="reset" title="Restart (R)">⟲ Restart</button>
+    <button id="menu" title="Levels (M)">☰ Nights</button>
+    <button id="snd" title="Sound">♪ On</button>
+  </div>
+  <div id="hint"></div>
+</div>
+<div id="overlay"><div class="card" id="card"></div></div>
+
+<script src="core.js"></script>
+<script src="levels.js"></script>
+<script>
+(() => {
+  const COL = ['#ffb347', '#4fd1a5', '#b48cff'], NAME = ['amber', 'jade', 'violet'], GLYPH = ['●', '◆', '▲'];
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const save = JSON.parse(localStorage.getItem('ld-save') || '{}'); // {best:{i:moves}}
+  save.best = save.best || {};
+  let L, B, pieces, hist, sel = 0, moves = 0, anim = null, idx = 0, won = false, sound = save.sound !== false;
+  let cell = 48, ox = 0, oy = 0, t0 = performance.now(), ripples = [];
+
+  // ---------- audio: soft pentatonic chimes, all synthesized ----------
+  let ac = null;
+  const PENTA = [0, 2, 4, 7, 9, 12, 14, 16];
+  function chime(semi, dur = 0.9, gain = 0.12, type = 'sine') {
+    if (!sound) return;
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    const t = ac.currentTime, o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain();
+    const f = 261.63 * Math.pow(2, semi / 12);
+    o.type = type; o.frequency.value = f; o2.type = 'sine'; o2.frequency.value = f * 2.005;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const g2 = ac.createGain(); g2.gain.value = 0.25;
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(ac.destination);
+    o.start(t); o2.start(t); o.stop(t + dur); o2.stop(t + dur);
+  }
+
+  // ---------- level / state ----------
+  function load(i) {
+    idx = Math.max(0, Math.min(LEVELS.length - 1, i));
+    L = LEVELS[idx]; B = LD.parse(L);
+    pieces = B.pieces.map(p => ({ ...p })); hist = []; moves = 0; won = false; anim = null;
+    const cols = [...new Set(pieces.map(p => p.c))].sort();
+    sel = cols[0];
+    $('lvn').textContent = idx + 1; $('lvt').textContent = LEVELS.length; $('par').textContent = L.par; $('mv').textContent = 0;
+    $('chips').innerHTML = cols.length > 1 ? cols.map(c => `<button class="chip" data-c="${c}" style="color:${COL[c]}" title="${NAME[c]} (${c + 1})">${GLYPH[c]}</button>`).join(' ') : '';
+    document.querySelectorAll('.chip').forEach(b => b.onclick = () => select(+b.dataset.c));
+    select(sel);
+    $('hint').innerHTML = idx === 0 ? 'Swipe or use <kbd>←↑→↓</kbd>. A lantern drifts until something stops it. Bring it to the ring of its colour.'
+      : idx === 4 ? 'Two colours now: tap a lantern (or <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>) to choose which colour drifts.'
+      : idx === 8 ? 'Lanterns of one colour always drift together — use one to stop the other.'
+      : idx === 18 ? 'Three colours. Every night has a solution in exactly par moves.' : '';
+    save.last = idx; persist(); resize();
+  }
+  function persist() { localStorage.setItem('ld-save', JSON.stringify(save)); }
+  function select(c) {
+    if (!pieces.some(p => p.c === c)) return;
+    sel = c;
+    document.querySelectorAll('.chip').forEach(b => b.classList.toggle('sel', +b.dataset.c === c));
+  }
+  function move(dir) {
+    if (won || anim) return;
+    const r = LD.step(B, pieces, sel, dir);
+    if (!r.moved.length) { chime(-12, 0.25, 0.05, 'triangle'); bump(dir); return; }
+    hist.push(pieces); moves++; $('mv').textContent = moves;
+    const dist = Math.max(...r.moved.map(m => Math.abs(m.to.x - m.from.x) + Math.abs(m.to.y - m.from.y)));
+    anim = { from: pieces, to: r.pieces, moved: r.moved, t: performance.now(), dur: 90 + dist * 55 };
+    pieces = r.pieces;
+    const me = anim; setTimeout(() => { if (anim === me) onSettled(); }, anim.dur);
+    chime(PENTA[sel * 2 + (moves % 3)] , 0.7, 0.08);
+  }
+  let bumpA = null;
+  function bump(dir) { bumpA = { dir, t: performance.now() }; }
+  function undo() { if (anim || !hist.length) return; pieces = hist.pop(); moves--; won = false; $('mv').textContent = moves; chime(-5, 0.3, 0.05); }
+  function onSettled() {
+    for (const m of anim.moved) {
+      const p = anim.to[m.i];
+      if (B.shrines.some(s => s.x === p.x && s.y === p.y && s.c === p.c)) { ripples.push({ x: p.x, y: p.y, c: p.c, t: performance.now() }); chime(PENTA[4 + p.c], 1.4, 0.1); }
+    }
+    anim = null;
+    if (LD.solved(B, pieces)) win();
+  }
+  function starsFor(m, par) { return m <= par ? 3 : m <= Math.ceil(par * 1.5) ? 2 : 1; }
+  function win() {
+    won = true;
+    const prev = save.best[idx]; if (!prev || moves < prev) save.best[idx] = moves; persist();
+    [0, 4, 7, 12].forEach((s, k) => setTimeout(() => chime(s + 7, 1.6, 0.09), k * 140));
+    const st = starsFor(moves, L.par), last = idx === LEVELS.length - 1;
+    setTimeout(() => show(`<h2>${last ? 'The last lantern is home' : 'Home'}</h2>
+      <div class="stars">${'★'.repeat(st)}<span class="off">${'★'.repeat(3 - st)}</span></div>
+      <p>${moves} moves · par ${L.par}${moves > L.par ? ' — it can be done in ' + L.par + '.' : moves === L.par ? ' — perfect.' : ''}</p>
+      <p>${last ? `Thank you for playing. ${totalStars()} / ${LEVELS.length * 3} stars.` : ''}</p>
+      <button id="again">Replay</button> ${last ? '<button id="lvls">All nights</button>' : '<button id="next">Next night →</button>'}`), 650);
+  }
+  function totalStars() { return Object.entries(save.best).reduce((s, [i, m]) => s + starsFor(m, LEVELS[i].par), 0); }
+  function unlocked(i) { return i === 0 || save.best[i - 1] != null || save.best[i] != null; }
+  function show(html) {
+    $('card').innerHTML = html; $('overlay').classList.add('on');
+    const bind = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+    bind('again', () => { hide(); load(idx); });
+    bind('next', () => { hide(); load(idx + 1); });
+    bind('lvls', levelMenu);
+    bind('start', () => { hide(); load(save.last || 0); });
+    $('card').querySelectorAll('.lv').forEach(b => b.onclick = () => { hide(); load(+b.dataset.i); });
+  }
+  function hide() { $('overlay').classList.remove('on'); }
+  function levelMenu() {
+    show(`<h2>Nights</h2><p>${totalStars()} / ${LEVELS.length * 3} stars</p><div class="grid">${LEVELS.map((l, i) => {
+      const b = save.best[i]; const st = b != null ? '★'.repeat(starsFor(b, l.par)) : '';
+      return `<button class="lv" data-i="${i}" ${unlocked(i) ? '' : 'disabled'}>${i + 1}<small>${st}</small></button>`; }).join('')}</div>
+      <button onclick="document.getElementById('overlay').classList.remove('on')">Close</button>`);
+  }
+
+  // ---------- input ----------
+  const KEY = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R', w: 'U', s: 'D', a: 'L', d: 'R', W: 'U', S: 'D', A: 'L', D: 'R' };
+  addEventListener('keydown', e => {
+    if ($('overlay').classList.contains('on')) { if (e.key === 'Enter') { const n = $('next') || $('start') || $('again'); n && n.click(); } if (e.key === 'Escape') hide(); return; }
+    if (KEY[e.key]) { e.preventDefault(); move(KEY[e.key]); }
+    else if ('123'.includes(e.key)) select(+e.key - 1);
+    else if (e.key === 'Tab') { e.preventDefault(); const cs = [...new Set(pieces.map(p => p.c))].sort(); select(cs[(cs.indexOf(sel) + 1) % cs.length]); }
+    else if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') undo();
+    else if (e.key === 'r' || e.key === 'R') load(idx);
+    else if (e.key === 'm' || e.key === 'M') levelMenu();
+  });
+  let down = null;
+  cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointerup', e => {
+    if (!down) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y; down = null;
+    const r = cv.getBoundingClientRect(), sc = cv.width / r.width / devicePixelRatio;
+    if (Math.hypot(dx, dy) < 18) { // tap: select lantern under finger, or move selected toward tap
+      const gx = Math.floor(((e.clientX - r.left) * sc - ox) / cell), gy = Math.floor(((e.clientY - r.top) * sc - oy) / cell);
+      const p = pieces.find(p => p.x === gx && p.y === gy);
+      if (p) { select(p.c); chime(PENTA[p.c * 2], 0.25, 0.05); }
+      return;
+    }
+    move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U'));
+  });
+  $('undo').onclick = undo; $('reset').onclick = () => load(idx); $('menu').onclick = levelMenu;
+  $('snd').onclick = () => { sound = !sound; save.sound = sound; persist(); $('snd').textContent = sound ? '♪ On' : '♪ Off'; };
+  $('snd').textContent = sound ? '♪ On' : '♪ Off';
+
+  // ---------- render ----------
+  function resize() {
+    if (!B) return;
+    const st = $('stage').getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    cell = Math.floor(Math.min(st.width / B.w, st.height / B.h, 76));
+    const W = cell * B.w, H = cell * B.h;
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ox = 0; oy = 0;
+  }
+  addEventListener('resize', resize);
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+  function drawGlyph(c, x, y, r) {
+    ctx.beginPath();
+    if (c === 0) ctx.arc(x, y, r, 0, 7);
+    else if (c === 1) { ctx.moveTo(x, y - r * 1.15); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r * 1.15); ctx.lineTo(x - r, y); ctx.closePath(); }
+    else { ctx.moveTo(x, y - r * 1.1); ctx.lineTo(x + r * 1.05, y + r * 0.75); ctx.lineTo(x - r * 1.05, y + r * 0.75); ctx.closePath(); }
+  }
+  let lastFrame = 0;
+  function frame(now, fb) {
+    if (!fb) requestAnimationFrame(frame);
+    lastFrame = performance.now();
+    if (!B) return;
+    const T = (now - t0) / 1000, W = cell * B.w, H = cell * B.h;
+    ctx.clearRect(0, 0, W, H);
+    // water
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0e1a33'); g.addColorStop(1, '#0a1226');
+    ctx.fillStyle = g; rr(0, 0, W, H, cell * 0.3); ctx.fill();
+    ctx.strokeStyle = '#ffffff08'; ctx.lineWidth = 1;
+    for (let y = 0; y < B.h; y++) for (let x = 0; x < B.w; x++) {
+      if (B.walls.has(x + ',' + y)) continue;
+      const s = Math.sin(T * 0.8 + x * 0.9 + y * 0.6) * 0.5 + 0.5;
+      ctx.fillStyle = `rgba(120,160,255,${0.02 + s * 0.025})`; ctx.fillRect(x * cell + 1, y * cell + 1, cell - 2, cell - 2);
+    }
+    // stones
+    for (const k of B.walls) {
+      const [x, y] = k.split(',').map(Number);
+      const sg = ctx.createRadialGradient(x * cell + cell * .4, y * cell + cell * .35, cell * .05, x * cell + cell / 2, y * cell + cell / 2, cell * .7);
+      const edge = x === 0 || y === 0 || x === B.w - 1 || y === B.h - 1;
+      sg.addColorStop(0, edge ? '#1a2033' : '#2f3750'); sg.addColorStop(1, edge ? '#0f1424' : '#161c2e');
+      ctx.fillStyle = sg; rr(x * cell + 2, y * cell + 2, cell - 4, cell - 4, cell * 0.28); ctx.fill();
+    }
+    // shrines
+    for (const s of B.shrines) {
+      const cx = s.x * cell + cell / 2, cy = s.y * cell + cell / 2, pulse = 0.5 + 0.5 * Math.sin(T * 2 + s.c);
+      ctx.strokeStyle = COL[s.c]; ctx.globalAlpha = 0.45 + pulse * 0.35; ctx.lineWidth = Math.max(2, cell * 0.06);
+      ctx.beginPath(); ctx.arc(cx, cy, cell * 0.36, 0, 7); ctx.stroke();
+      ctx.globalAlpha = 0.25; ctx.fillStyle = COL[s.c]; drawGlyph(s.c, cx, cy, cell * 0.1); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    // ripples
+    ripples = ripples.filter(r => now - r.t < 1200);
+    for (const r of ripples) {
+      const k = (now - r.t) / 1200;
+      ctx.strokeStyle = COL[r.c]; ctx.globalAlpha = 1 - k; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(r.x * cell + cell / 2, r.y * cell + cell / 2, cell * (0.35 + k * 0.9), 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    // lanterns
+    let draw = pieces, k = 1;
+    if (anim) { k = Math.min(1, (now - anim.t) / anim.dur); draw = anim.from.map((p, i) => ({ c: p.c, x: p.x + (anim.to[i].x - p.x) * ease(k), y: p.y + (anim.to[i].y - p.y) * ease(k) })); }
+    let bx = 0, by = 0;
+    if (bumpA) { const q = (now - bumpA.t) / 160; if (q > 1) bumpA = null; else { const d = LD.DIRS[bumpA.dir]; const a = Math.sin(q * Math.PI) * cell * 0.06; bx = d[0] * a; by = d[1] * a; } }
+    draw.forEach((p, i) => {
+      const home = !anim && B.shrines.some(s => s.x === p.x && s.y === p.y && s.c === p.c);
+      const isSel = p.c === sel && !won;
+      const cx = p.x * cell + cell / 2 + (isSel ? bx : 0), cy = p.y * cell + cell / 2 + (isSel ? by : 0) + Math.sin(T * 2.2 + i) * cell * 0.015;
+      const fl = 0.85 + 0.15 * Math.sin(T * 9 + i * 3) * Math.sin(T * 5.3 + i);
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * (home ? 1.0 : 0.75));
+      rg.addColorStop(0, COL[p.c] + (home ? 'aa' : '66')); rg.addColorStop(1, COL[p.c] + '00');
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(cx, cy, cell * (home ? 1.0 : 0.75), 0, 7); ctx.fill();
+      ctx.fillStyle = COL[p.c]; ctx.globalAlpha = fl; drawGlyph(p.c, cx, cy, cell * 0.24); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#fff8e0'; ctx.globalAlpha = 0.85 * fl; drawGlyph(p.c, cx, cy, cell * 0.09); ctx.fill(); ctx.globalAlpha = 1;
+      if (isSel && new Set(pieces.map(q => q.c)).size > 1) { ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.lineDashOffset = -T * 12;
+        ctx.beginPath(); ctx.arc(cx, cy, cell * 0.42, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    });
+  }
+
+  // ---------- boot ----------
+  if (!window.LEVELS || !LEVELS.length) { document.body.innerHTML = '<p style="padding:20px">levels.js missing</p>'; return; }
+  const hl = /#lv=(\d+)/.exec(location.hash);
+  load(hl ? +hl[1] - 1 : (save.last || 0));
+  requestAnimationFrame(frame);
+  setInterval(() => { if (performance.now() - lastFrame > 250) frame(performance.now(), true); }, 120); // keeps rendering where rAF is throttled
+  if (!hl && location.hash !== '#selftest' && !Object.keys(save.best).length) show(`<h2>Lantern Drift</h2>
+    <p>On the night of the river festival, the lanterns have drifted loose.</p>
+    <p>Each lantern drifts in a straight line until a stone or another lantern stops it. Lanterns of the same colour always drift together. Bring every lantern home to the ring of its colour.</p>
+    <p style="color:var(--dim);font-size:14px">${LEVELS.length} nights · every one checked by a solver, par = the fewest possible moves<br>
+    <kbd>←↑→↓</kbd>/swipe drift · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/tap choose colour · <kbd>Z</kbd> undo · <kbd>R</kbd> restart</p>
+    <button id="start">Light the first lantern</button>`);
+  // ---------- self-test (#selftest): plays every level's optimal solution through the real input path ----------
+  if (location.hash === '#selftest') {
+    hide(); const res = []; let li = 0;
+    const run = () => { load(li); const sol = LEVELS[li].sol.split(' '); let k = 0;
+      const tick = () => { if (anim) return setTimeout(tick, 30);
+        if (k < sol.length) { select(+sol[k][0]); move(sol[k][1]); k++; return setTimeout(tick, 30); }
+        setTimeout(() => { res.push(won && moves === LEVELS[li].par ? 1 : 0); hide(); li++;
+          if (li < LEVELS.length) run(); else { const ok = res.filter(Boolean).length; document.title = 'SELFTEST ' + ok + '/' + res.length; document.body.setAttribute('data-selftest', ok + '/' + res.length); } }, 60); };
+      tick(); };
+    run();
+  }
+})();
+</script>
+</body>
+</html>
